@@ -35,7 +35,7 @@ export const register = async (req: Request, res: Response) => {
         settings: {
           create: {},
         },
-        // role: 'ADMIN',
+        role: 'ADMIN',
         // Role is automatically set to 'USER' due to the default in the schema
       },
     });
