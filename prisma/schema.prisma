@@ -13,7 +13,7 @@ model User {
   email          String          @unique
   phoneNumber    String
   password       String
-  role           Role            @default(ADMIN)
+  role           Role            @default(USER)
   isActive       Boolean         @default(true)
   settingsId     Int?
   createdAt      DateTime        @default(now())
