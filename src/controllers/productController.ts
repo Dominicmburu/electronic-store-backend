@@ -1,11 +1,8 @@
-// src/controllers/productController.ts
-
 import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { productSchema } from '../validations/productValidation';
 import { updateFeaturedSchema } from '../validations/productValidation';
 
-// Get featured printers
 export const getFeaturedPrinters = async (req: Request, res: Response) => {
   try {
     const featuredPrinters = await prisma.product.findMany({
@@ -26,24 +23,36 @@ export const getFeaturedPrinters = async (req: Request, res: Response) => {
   }
 };
 
-// List all products
 export const listProducts = async (req: Request, res: Response) => {
-  const { page = 1, limit = 10, categoryId, isFeatured, search } = req.query;
+  const { page = 1, limit = 10, categoryId, isFeatured, search, sort } = req.query;
   const offset = (Number(page) - 1) * Number(limit);
 
   try {
-    // Build dynamic filtering options
     const filters: any = {};
     if (categoryId) filters.categoryId = Number(categoryId);
     if (isFeatured) filters.isFeatured = isFeatured === 'true';
     if (search) filters.name = { contains: String(search), mode: 'insensitive' };
 
-    // Fetch products with filters, pagination, and optional sorting
+    let orderBy: any = { createdAt: 'desc' }; 
+    if (typeof sort === 'string' && sort !== 'default') {
+      if (sort === 'price-low-high') {
+        orderBy = { currentPrice: 'asc' };
+      } else if (sort === 'price-high-low') {
+        orderBy = { currentPrice: 'desc' };
+      } else if (sort === 'latest') {
+        orderBy = { createdAt: 'desc' };
+      }
+    }
+
+    console.log('[listProducts] Filters:', filters);
+    console.log('[listProducts] OrderBy:', orderBy);
+    console.log('[listProducts] Page:', page, 'Limit:', limit, 'Offset:', offset);
+
     const products = await prisma.product.findMany({
       where: filters,
       skip: offset,
       take: Number(limit),
-      orderBy: { createdAt: 'desc' },
+      orderBy: orderBy,
       select: {
         id: true,
         name: true,
