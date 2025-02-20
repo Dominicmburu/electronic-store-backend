@@ -44,22 +44,22 @@ export const register = async (req: Request, res: Response) => {
     const token = generateToken(user.id);
 
     // Set token in HTTP-only cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // res.cookie('token', token, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    //   sameSite: 'strict',
+    //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    // });
 
     // Respond with user data including the role
     res.status(201).json({
       message: 'User registered successfully',
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      // user: {
+      //   id: user.id,
+      //   name: user.name,
+      //   email: user.email,
+      //   role: user.role,
+      // },
     });
   } catch (err) {
     console.error('Registration Error:', err);
@@ -108,11 +108,12 @@ export const login = async (req: Request, res: Response) => {
     // Respond with user data including the role
     res.status(200).json({
       message: 'Logged in successfully',
+      token,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role, // Included role
+        role: user.role,
       },
     });
   } catch (err) {
