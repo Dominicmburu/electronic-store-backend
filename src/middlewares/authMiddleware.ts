@@ -27,7 +27,7 @@ interface RequestWithUser extends Request {
  * If valid, it attaches the user information to the request object.
  */
 export const authenticateToken = async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
-  const token = req.cookies.token;
+  const token = req.cookies.token || req.headers.authorization?.split(' ')[1];;
 
   // If no token is provided, deny access
   if (!token) {

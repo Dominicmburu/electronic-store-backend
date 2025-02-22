@@ -5,6 +5,15 @@ import { generateToken } from '../utils/tokenUtils';
 import { registerSchema, loginSchema } from '../validations/authValidation';
 import { CustomError } from '../utils/CustomError';
 
+
+const handleError = (error: any, res: Response) => {
+  if (error instanceof CustomError) {
+    return res.status(error.statusCode).json({ message: error.message });
+  }
+  console.error(error); // Log the error details for debugging
+  return res.status(500).json({ message: 'An unexpected error occurred. Please try again later.' });
+};
+
 // Register a new user
 export const register = async (req: Request, res: Response) => {
   try {
@@ -62,12 +71,7 @@ export const register = async (req: Request, res: Response) => {
       // },
     });
   } catch (err) {
-    console.error('Registration Error:', err);
-    if (err instanceof CustomError) {
-      res.status(err.statusCode).json({ message: err.message });
-    } else {
-      res.status(500).json({ message: 'Server error' });
-    }
+    handleError(err, res);
   }
 };
 
@@ -117,21 +121,21 @@ export const login = async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Login Error:', err);
-    if (err instanceof CustomError) {
-      res.status(err.statusCode).json({ message: err.message });
-    } else {
-      res.status(500).json({ message: 'Server error' });
-    }
+    handleError(err, res);
   }
 };
 
 // Logout a user
 export const logout = (req: Request, res: Response) => {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
-  res.status(200).json({ message: 'Logged out successfully' });
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+    res.status(200).json({ message: 'Logged out successfully' });
+  } catch (err) {
+    console.error('Logout Error:', err);
+    res.status(500).json({ message: 'Server error during logout' });
+  }
 };
