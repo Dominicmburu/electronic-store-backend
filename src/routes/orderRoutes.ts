@@ -1,7 +1,7 @@
 // src/routes/orderRoutes.ts
 
 import express from 'express';
-import { placeOrder, getOrderDetails, updateOrderStatus, trackOrder, cancelOrder } from '../controllers/orderController';
+import { placeOrder, getOrderDetails, updateOrderStatus, trackOrder, cancelOrder, getUserOrders } from '../controllers/orderController';
 import { authenticateToken } from '../middlewares/authMiddleware';
 import { authorizeAdmin } from '../middlewares/adminMiddleware'; // Optional: If you have an admin middleware
 import { asyncHandler } from '../utils/asyncHandler';
@@ -10,6 +10,8 @@ const router = express.Router();
 
 // Apply authentication middleware to all order routes
 router.use(authenticateToken);
+
+router.get('/user', asyncHandler(getUserOrders));
 
 // POST /api/orders - Place a new order
 router.post('/', asyncHandler(placeOrder));
@@ -25,6 +27,5 @@ router.get('/:orderNumber/track', asyncHandler(trackOrder));
 
 // DELETE /api/orders/:orderNumber - Cancel an order
 router.delete('/:orderNumber', asyncHandler(cancelOrder));
-
 
 export default router;

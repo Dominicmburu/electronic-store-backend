@@ -19,6 +19,7 @@ import { authorizeAdmin } from '../middlewares/adminMiddleware';
 import validate from '../middlewares/validationMiddleware';
 import { adminCreateUserSchema, updateUserSchema } from '../validations/adminValidation';
 
+
 const router = express.Router();
 
 router.post('/login', adminLogin);
@@ -47,5 +48,6 @@ router.put('/:id', validate(updateUserSchema), adminUpdateAdmin);
 router.delete('/:id', adminDeactivateAdmin);
 
 router.get('/:id', getAdminDetails);
+
 
 export default router;

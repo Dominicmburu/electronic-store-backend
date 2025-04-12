@@ -49,36 +49,34 @@ export const register = async (req: Request, res: Response) => {
       },
     });
 
-    // Generate JWT token
+
+    const wallet = await prisma.wallet.create({
+      data: {
+        userId: user.id,
+        balance: 0,
+      },
+    });
+
+    const paymentMethod = await prisma.paymentMethod.create({
+      data: {
+        userId: user.id,
+        type: 'WALLET',
+        details: 'Default wallet payment method',
+      },
+    });
+
     const token = generateToken(user.id);
 
-    // Set token in HTTP-only cookie
-    // res.cookie('token', token, {
-    //   httpOnly: true,
-    //   secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    //   sameSite: 'strict',
-    //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    // });
-
-    // Respond with user data including the role
     res.status(201).json({
       message: 'User registered successfully',
-      // user: {
-      //   id: user.id,
-      //   name: user.name,
-      //   email: user.email,
-      //   role: user.role,
-      // },
     });
   } catch (err) {
     handleError(err, res);
   }
 };
 
-// Login an existing user
 export const login = async (req: Request, res: Response) => {
   try {
-    // Validate request body
     const { error } = loginSchema.validate(req.body);
     if (error) {
       throw new CustomError(error.details[0].message, 400);
@@ -86,22 +84,18 @@ export const login = async (req: Request, res: Response) => {
 
     const { email, password } = req.body;
 
-    // Find user by email
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       throw new CustomError('Invalid credentials', 400);
     }
 
-    // Compare passwords
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new CustomError('Invalid credentials', 400);
     }
 
-    // Generate JWT token
     const token = generateToken(user.id);
 
-    // Set token in HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
@@ -109,7 +103,6 @@ export const login = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    // Respond with user data including the role
     res.status(200).json({
       message: 'Logged in successfully',
       token,
@@ -125,7 +118,6 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// Logout a user
 export const logout = (req: Request, res: Response) => {
   try {
     res.clearCookie('token', {

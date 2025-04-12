@@ -14,7 +14,6 @@ interface RequestWithUser extends Request {
   };
 }
 
-// Get user profile
 export const getProfile = async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.id;
 
@@ -46,10 +45,9 @@ export const getProfile = async (req: RequestWithUser, res: Response) => {
   }
 };
 
-// Update user profile
 export const updateProfile = async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.id;
-  const { name, email, phoneNumber, password } = req.body;
+  const { name, email, phoneNumber, password, currentPassword } = req.body;
 
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -58,8 +56,26 @@ export const updateProfile = async (req: RequestWithUser, res: Response) => {
   if (error) return res.status(400).json({ message: error.details[0].message });
 
   try {
-    // Prepare update data
-    const updateData: any = {};
+    // Fetch the user's current data
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const isUpdatingSensitiveFields = password || email || phoneNumber;
+    if (isUpdatingSensitiveFields && !currentPassword) {
+      return res.status(400).json({ message: 'Current password is required to update sensitive fields.' });
+    }
+
+    if (isUpdatingSensitiveFields) {
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      if (!isPasswordValid) {
+        return res.status(400).json({ message: 'Incorrect current password.' });
+      }
+    }
+
+    const updateData: Prisma.UserUpdateInput = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (phoneNumber) updateData.phoneNumber = phoneNumber;
@@ -68,7 +84,6 @@ export const updateProfile = async (req: RequestWithUser, res: Response) => {
       updateData.password = hashedPassword;
     }
 
-    // Update user
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
@@ -89,9 +104,8 @@ export const updateProfile = async (req: RequestWithUser, res: Response) => {
     res.status(200).json({ message: 'Profile updated successfully', user: updatedUser });
   } catch (err) {
     console.error('Update Profile Error:', err);
-    // Handle unique email constraint
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return res.status(400).json({ message: 'Update Profile Error' });
+      return res.status(400).json({ message: 'Email already in use.' });
     }
     res.status(500).json({ message: 'Server error' });
   }

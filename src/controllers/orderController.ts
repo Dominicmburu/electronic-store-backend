@@ -14,6 +14,34 @@ interface RequestWithUser extends Request {
   };
 }
 
+// Get user orders
+export const getUserOrders = async (req: RequestWithUser, res: Response) => {
+  const userId = req.user?.id; 
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }  
+
+  try {
+    const orders = await prisma.order.findMany({
+      where: { userId },  
+      include: {
+        orderItems: { include: { product: true } },  
+        statusHistory: true, 
+      },
+    });    
+
+    if (orders.length === 0) {
+      return res.status(404).json({ message: 'No orders found for this user' });
+    }
+
+    res.status(200).json({ orders }); 
+  } catch (err) {
+    console.error('Error fetching user orders:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Place a new order
 export const placeOrder = async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.id;
@@ -232,6 +260,9 @@ export const cancelOrder = async (req: RequestWithUser, res: Response) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+
+
 
 
 

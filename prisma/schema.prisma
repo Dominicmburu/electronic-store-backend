@@ -25,6 +25,10 @@ model User {
   reviews        Review[]        @relation("UserReviews")
   settings       Settings?       @relation("UserSettings")
   wishlist       Wishlist[]      @relation("UserWishlist")
+  wallet           Wallet?          @relation("UserWallet")
+  transactions     Transaction[]    @relation("UserTransactions")
+  refundRequests   RefundRequest[]  @relation("UserRefundRequests")
+  processedRefunds RefundRequest[]  @relation("AdminProcessedRefunds")
 }
 
 model Address {
@@ -127,9 +131,11 @@ model Order {
   paymentMethod   PaymentMethodType
   status          OrderStatusEnum  @default(PENDING)
   userId          Int
-  user            User          @relation("UserOrders", fields: [userId], references: [id])
-  orderItems      OrderItem[]   @relation("OrderItems")
-  statusHistory   OrderStatus[] @relation("OrderStatus")
+  user            User             @relation("UserOrders", fields: [userId], references: [id])
+  orderItems      OrderItem[]      @relation("OrderItems")
+  statusHistory   OrderStatus[]    @relation("OrderStatus")
+  orderTransaction Transaction[]    @relation("OrderTransaction")
+  refundRequests   RefundRequest[]  @relation("OrderRefund")
 }
 
 model OrderItem {
@@ -172,6 +178,67 @@ model Shop {
   longitude Float
 }
 
+model Wallet {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @unique
+  balance     Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation("UserWallet", fields: [userId], references: [id])
+  transactions Transaction[] @relation("WalletTransactions")
+}
+
+model Transaction {
+  id                Int               @id @default(autoincrement())
+  transactionType   TransactionType
+  amount            Float
+  description       String?
+  status            TransactionStatus @default(PENDING)
+  reference         String            @unique
+  paymentMethod     PaymentMethodType
+  walletId          Int?
+  userId            Int
+  orderId           Int?             
+  mpesaReceiptId    String?           @unique
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  metaData          Json?             // Store additional data like callbacks
+  wallet            Wallet?           @relation("WalletTransactions", fields: [walletId], references: [id])
+  user              User              @relation("UserTransactions", fields: [userId], references: [id])
+  order             Order?            @relation("OrderTransaction", fields: [orderId], references: [id])
+}
+
+model MpesaCallback {
+  id              Int       @id @default(autoincrement())
+  transactionType String    // STK, B2C, C2B
+  merchantRequestId String?
+  checkoutRequestId String?
+  resultCode      Int
+  resultDesc      String
+  callbackMetadata Json?
+  transactionId   String?
+  phoneNumber     String?
+  createdAt       DateTime  @default(now())
+}
+
+model RefundRequest {
+  id             Int            @id @default(autoincrement())
+  orderId        Int
+  userId         Int
+  amount         Float
+  reason         String
+  status         RefundStatus   @default(PENDING)
+  processedBy    Int?
+  processedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  order          Order          @relation("OrderRefund", fields: [orderId], references: [id])
+  user           User           @relation("UserRefundRequests", fields: [userId], references: [id])
+  adminUser      User?          @relation("AdminProcessedRefunds", fields: [processedBy], references: [id])
+}
+
+
+
 enum Role {
   USER
   ADMIN
@@ -193,4 +260,27 @@ enum PaymentMethodType {
   PAYPAL
   BANK_TRANSFER
   UPI
+  WALLET
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  WALLET_TOPUP
+  WALLET_WITHDRAWAL
+  WALLET_PAYMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
 }
