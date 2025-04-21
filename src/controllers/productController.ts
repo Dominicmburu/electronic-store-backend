@@ -1,7 +1,35 @@
 import { Request, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
 import prisma from '../config/database';
 import { productSchema } from '../validations/productValidation';
 import { updateFeaturedSchema } from '../validations/productValidation';
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, '../../uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = filetypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed (JPG, PNG, GIF).'));
+    }
+  }
+}).array('images');
 
 export const getFeaturedPrinters = async (req: Request, res: Response) => {
   try {
@@ -13,6 +41,7 @@ export const getFeaturedPrinters = async (req: Request, res: Response) => {
         description: true,
         images: true,
         currentPrice: true,
+        stockQuantity: true,
       },
     });
 
@@ -33,7 +62,7 @@ export const listProducts = async (req: Request, res: Response) => {
     if (isFeatured) filters.isFeatured = isFeatured === 'true';
     if (search) filters.name = { contains: String(search), mode: 'insensitive' };
 
-    let orderBy: any = { createdAt: 'desc' }; 
+    let orderBy: any = { createdAt: 'desc' };
     if (typeof sort === 'string' && sort !== 'default') {
       if (sort === 'price-low-high') {
         orderBy = { currentPrice: 'asc' };
@@ -43,10 +72,6 @@ export const listProducts = async (req: Request, res: Response) => {
         orderBy = { createdAt: 'desc' };
       }
     }
-
-    console.log('[listProducts] Filters:', filters);
-    console.log('[listProducts] OrderBy:', orderBy);
-    console.log('[listProducts] Page:', page, 'Limit:', limit, 'Offset:', offset);
 
     const products = await prisma.product.findMany({
       where: filters,
@@ -62,6 +87,7 @@ export const listProducts = async (req: Request, res: Response) => {
         lastPrice: true,
         isFeatured: true,
         createdAt: true,
+        stockQuantity: true,
         category: {
           select: {
             id: true,
@@ -98,6 +124,7 @@ export const getLatestPrinters = async (req: Request, res: Response) => {
         images: true,
         lastPrice: true,
         currentPrice: true,
+        stockQuantity: true,
       },
     });
 
@@ -134,44 +161,53 @@ export const getProductDetails = async (req: Request, res: Response) => {
 
 // Create a new product (Admin functionality)
 export const createProduct = async (req: Request, res: Response) => {
-  // Assuming you have admin middleware to protect this route
-  // Validate request body
-  const { error } = productSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.details[0].message });
+  upload(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ message: err.message });
+    } else if (err) {
+      return res.status(400).json({ message: err.message });
+    }
 
-  const { name, description, lastPrice, currentPrice, specifications, images, isFeatured, categoryId } = req.body;
+    const { error } = productSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
 
-  try {
-    // Check if category exists
-    const category = await prisma.category.findUnique({ where: { id: categoryId } });
-    if (!category) return res.status(404).json({ message: 'Category not found' });
+    const { name, description, lastPrice, currentPrice, specifications, isFeatured, categoryId, stockQuantity } = req.body;
+    const imagePaths = req.files ? (req.files as Express.Multer.File[]).map(file => file.path) : [];
 
-    // Create the product
-    const product = await prisma.product.create({
-      data: {
-        name,
-        description,
-        lastPrice,
-        currentPrice,
-        specifications,
-        images,
-        isFeatured: isFeatured || false,
-        category: { connect: { id: categoryId } },
-      },
-    });
+    try {
+      // Check if category exists
+      const category = await prisma.category.findUnique({ where: { id: categoryId } });
+      
+      if (!category) return res.status(404).json({ message: 'Category not found' });
 
-    // If product is added to a printer type category, increment the printer count
-    const printerTypeId = category.printerTypeId;
-    await prisma.printerType.update({
-      where: { id: printerTypeId },
-      data: { printerCount: { increment: 1 } },
-    });
+      // Create the product
+      const product = await prisma.product.create({
+        data: {
+          name,
+          description,
+          lastPrice,
+          currentPrice,
+          specifications,
+          images: imagePaths,
+          isFeatured: isFeatured || false,
+          stockQuantity: stockQuantity || 0,
+          category: { connect: { id: categoryId } },
+        },
+      });
 
-    res.status(201).json({ message: 'Product created successfully', product });
-  } catch (err) {
-    console.error('Create Product Error:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
+      // If product is added to a printer type category, increment the printer count
+      const printerTypeId = category.printerTypeId;
+      await prisma.printerType.update({
+        where: { id: printerTypeId },
+        data: { printerCount: { increment: 1 } },
+      });
+
+      res.status(201).json({ message: 'Product created successfully', product });
+    } catch (err) {
+      console.error('Create Product Error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
 };
 
 // Update an existing product (Admin functionality)

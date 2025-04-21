@@ -18,6 +18,7 @@ import { authenticateToken } from '../middlewares/authMiddleware';
 import { authorizeAdmin } from '../middlewares/adminMiddleware';
 import validate from '../middlewares/validationMiddleware';
 import { adminCreateUserSchema, updateUserSchema } from '../validations/adminValidation';
+import { asyncHandler } from '../utils/asyncHandler';
 
 
 const router = express.Router();
@@ -27,27 +28,27 @@ router.post('/login', adminLogin);
 router.use(authenticateToken);
 router.use(authorizeAdmin);
 
-router.post('/register', validate(adminCreateUserSchema), registerAdmin);
+router.post('/register', validate(adminCreateUserSchema), asyncHandler(registerAdmin));
 
-router.post('/users', validate(adminCreateUserSchema), adminCreateUser);
+router.post('/users', validate(adminCreateUserSchema), asyncHandler(adminCreateUser));
 
-router.get('/users', getAllUsers);
+router.get('/users', asyncHandler(getAllUsers));
 
-router.put('/users/:id', validate(updateUserSchema), adminUpdateUser);
+router.put('/users/:id', validate(updateUserSchema), asyncHandler(adminUpdateUser));
 
-router.delete('/users/:id', adminDeactivateUser);
+router.delete('/users/:id', asyncHandler(adminDeactivateUser));
 
-router.patch('/users/:id/active', adminUpdateUserActiveStatus);
+router.patch('/users/:id/active', asyncHandler(adminUpdateUserActiveStatus));
 
-router.patch('/admins/:id/active', adminUpdateAdminActiveStatus);
+router.patch('/admins/:id/active', asyncHandler(adminUpdateAdminActiveStatus));
 
 router.get('/users/:id', getUserDetails);
 
-router.put('/:id', validate(updateUserSchema), adminUpdateAdmin);
+router.put('/:id', validate(updateUserSchema), asyncHandler(adminUpdateAdmin));
 
-router.delete('/:id', adminDeactivateAdmin);
+router.delete('/:id', asyncHandler(adminDeactivateAdmin));
 
-router.get('/:id', getAdminDetails);
+router.get('/:id', asyncHandler(getAdminDetails));
 
 
 export default router;

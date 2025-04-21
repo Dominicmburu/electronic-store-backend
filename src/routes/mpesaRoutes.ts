@@ -25,6 +25,7 @@ router.post('/refund/process', authorizeAdmin, validate(processRefundSchema), mp
 router.get('/refund/requests', authorizeAdmin, mpesaController.getRefundRequests);
 router.get('/merchant/balance', authorizeAdmin, mpesaController.checkMerchantBalance);
 router.get('/stats', authorizeAdmin, mpesaController.getTransactionStats);
+router.get('/transactions', authorizeAdmin, mpesaController.getTransactions);
 
 
 //user

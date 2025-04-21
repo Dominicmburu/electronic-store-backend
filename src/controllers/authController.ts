@@ -65,8 +65,6 @@ export const register = async (req: Request, res: Response) => {
       },
     });
 
-    const token = generateToken(user.id);
-
     res.status(201).json({
       message: 'User registered successfully',
     });
@@ -94,13 +92,13 @@ export const login = async (req: Request, res: Response) => {
       throw new CustomError('Invalid credentials', 400);
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+      secure: process.env.NODE_ENV === 'production', 
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.status(200).json({

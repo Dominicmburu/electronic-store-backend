@@ -127,3 +127,115 @@ export const listCategories = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+
+interface SalesQueryResult {
+  totalSales: string | null;
+  orderCount: string | null;
+}
+
+// Get category sales statistics
+export const getCategorySales = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { period = 'monthly' } = req.query;
+
+  try {
+    // Verify category exists
+    const category = await prisma.category.findUnique({
+      where: { id: Number(id) }
+    });
+    if (!category) return res.status(404).json({ message: 'Category not found' });
+
+    // Calculate date range based on period
+    const dateRange = getDateRange(period as string);
+
+    // Get total sales for this category
+    const salesResult = await prisma.$queryRaw<SalesQueryResult[]>`
+      SELECT 
+        SUM(oi.price * oi.quantity) as totalSales,
+        COUNT(DISTINCT o.id) as orderCount
+      FROM "Order" o
+      JOIN "OrderItem" oi ON o.id = oi."orderId"
+      JOIN "Product" p ON oi."productId" = p.id
+      WHERE p."categoryId" = ${Number(id)}
+        AND o."orderDate" BETWEEN ${dateRange.start} AND ${dateRange.end}
+        AND o.status != 'CANCELLED'
+    `;
+
+    // Get sales data for previous period for trend calculation
+    const prevDateRange = getDateRange(period as string, true);
+    const prevSalesResult = await prisma.$queryRaw<SalesQueryResult[]>`
+      SELECT 
+        SUM(oi.price * oi.quantity) as totalSales
+      FROM "Order" o
+      JOIN "OrderItem" oi ON o.id = oi."orderId"
+      JOIN "Product" p ON oi."productId" = p.id
+      WHERE p."categoryId" = ${Number(id)}
+        AND o."orderDate" BETWEEN ${prevDateRange.start} AND ${prevDateRange.end}
+        AND o.status != 'CANCELLED'
+    `;
+
+    // Extract and convert values to numbers, handling null values
+    const currentSales = salesResult?.[0]?.totalSales ? Number(salesResult[0].totalSales) : 0;
+    const prevSales = prevSalesResult?.[0]?.totalSales ? Number(prevSalesResult[0].totalSales) : 0;
+    const orderCount = salesResult?.[0]?.orderCount ? Number(salesResult[0].orderCount) : 0;
+
+    // Calculate trend percentage
+    let trend = 0;
+    if (prevSales > 0) {
+      trend = ((currentSales - prevSales) / prevSales) * 100;
+    } else if (currentSales > 0) {
+      trend = 100;
+    }
+
+    res.status(200).json({
+      categoryId: Number(id),
+      categoryName: category.name,
+      totalSales: currentSales,
+      orderCount,
+      trend: parseFloat(trend.toFixed(1)),
+      period,
+      startDate: dateRange.start,
+      endDate: dateRange.end
+    });
+  } catch (err) {
+    console.error('Get Category Sales Error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+function getDateRange(period: string, previous = false): { start: Date; end: Date } {
+  const now = new Date();
+  
+  switch (period) {
+    case 'daily':
+      const dayOffset = previous ? -1 : 0;
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setHours(23, 59, 59, 999);
+      return { start: startOfDay, end: endOfDay };
+      
+    case 'weekly':
+      const weekOffset = previous ? -7 : 0;
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + weekOffset);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+      return { start: startOfWeek, end: endOfWeek };
+      
+    case 'yearly':
+      const yearOffset = previous ? -1 : 0;
+      const startOfYear = new Date(now.getFullYear() + yearOffset, 0, 1);
+      const endOfYear = new Date(now.getFullYear() + yearOffset, 11, 31);
+      endOfYear.setHours(23, 59, 59, 999);
+      return { start: startOfYear, end: endOfYear };
+      
+    case 'monthly':
+    default:
+      const monthOffset = previous ? -1 : 0;
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1 + monthOffset, 0);
+      endOfMonth.setHours(23, 59, 59, 999);
+      return { start: startOfMonth, end: endOfMonth };
+  }
+}

@@ -5,6 +5,7 @@ import {
   deleteCategory,
   getCategoryDetails,
   listCategories,
+  getCategorySales,
 } from '../controllers/categoryController';
 import { authenticateToken } from '../middlewares/authMiddleware';
 import { authorizeAdmin } from '../middlewares/adminMiddleware';
@@ -20,8 +21,10 @@ router.get('/:id', asyncHandler(getCategoryDetails)); // Get details of a specif
 router.use(authenticateToken);
 router.use(authorizeAdmin);
 
-router.post('/', asyncHandler(createCategory)); // Create a new category
+router.post('/', asyncHandler(createCategory)); 
 router.put('/:id', asyncHandler(updateCategory)); // Update an existing category
 router.delete('/:id', asyncHandler(deleteCategory)); // Delete a category
+
+router.get('/:id/sales', asyncHandler(getCategorySales));
 
 export default router;

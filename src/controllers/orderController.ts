@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { v4 as uuidv4 } from 'uuid';
 import { PaymentMethodType, Role, OrderStatusEnum } from '@prisma/client';
 import { updateOrderStatusSchema } from '../validations/orderValidation';
+import { format, subDays, subMonths, subYears, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
 
 interface RequestWithUser extends Request {
   user?: {
@@ -13,6 +14,7 @@ interface RequestWithUser extends Request {
     role: Role;
   };
 }
+
 
 // Get user orders
 export const getUserOrders = async (req: RequestWithUser, res: Response) => {
@@ -32,7 +34,7 @@ export const getUserOrders = async (req: RequestWithUser, res: Response) => {
     });    
 
     if (orders.length === 0) {
-      return res.status(404).json({ message: 'No orders found for this user' });
+      return res.status(200).json({ message: 'No orders found for this user' });
     }
 
     res.status(200).json({ orders }); 
@@ -155,6 +157,31 @@ export const getOrderDetails = async (req: RequestWithUser, res: Response) => {
   }
 };
 
+export const getAllOrders = async (req: RequestWithUser, res: Response) => {
+  const userId = req.user?.id;
+  
+  // Check if the user is an admin
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const orders = await prisma.order.findMany({
+      include: {
+        orderItems: { include: { product: true } },
+        statusHistory: true, 
+      },
+    });
+
+    if (orders.length === 0) {
+      return res.status(404).json({ message: 'No orders found' });
+    }
+
+    res.status(200).json({ orders }); 
+  } catch (err) {
+    console.error('Error fetching orders:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Update order status (Admin functionality)
 export const updateOrderStatus = async (req: RequestWithUser, res: Response) => {
   // Assuming you have admin middleware to protect this route
@@ -260,6 +287,238 @@ export const cancelOrder = async (req: RequestWithUser, res: Response) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+
+export const getRevenueAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { period = 'monthly' } = req.query;
+
+    // Get date range based on period
+    const { startDate, endDate } = getDateRange(period as 'daily' | 'weekly' | 'monthly' | 'yearly');
+
+    // Get all orders within the date range
+    const orders = await prisma.order.findMany({
+      where: {
+        orderDate: {
+          gte: startDate,
+          lte: endDate
+        },
+        status: {
+          not: 'CANCELLED'
+        }
+      },
+      include: {
+        orderItems: true
+      }
+    });
+
+    // Initialize result data structure
+    let items: any[] = [];
+    let totalRevenue = 0;
+    let previousPeriodRevenue = 0;
+    let periodLabel = '';
+
+    // Process data based on period
+    switch (period) {
+      case 'daily': {
+        // Group by hour
+        periodLabel = 'Today';
+        const hours = Array.from({ length: 24 }, (_, i) => i);
+        
+        items = hours.map(hour => {
+          const hourOrders = orders.filter(order => {
+            const orderHour = new Date(order.orderDate).getHours();
+            return orderHour === hour;
+          });
+
+          const revenue = hourOrders.reduce((sum, order) => {
+            return sum + order.orderItems.reduce((orderSum, item) => 
+              orderSum + (item.price * item.quantity), 0);
+          }, 0);
+
+          const ordersCount = hourOrders.length;
+
+          return {
+            date: `${hour.toString().padStart(2, '0')}:00`,
+            revenue,
+            orders: ordersCount
+          };
+        });
+
+        totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+        break;
+      }
+
+      case 'weekly': {
+        // Group by day
+        periodLabel = 'This Week';
+        const days = eachDayOfInterval({
+          start: startDate,
+          end: endDate
+        });
+
+        items = days.map(day => {
+          const dayStr = format(day, 'EEE');
+          const dayOrders = orders.filter(order => {
+            const orderDate = new Date(order.orderDate);
+            return orderDate.getDate() === day.getDate() && 
+                   orderDate.getMonth() === day.getMonth();
+          });
+
+          const revenue = dayOrders.reduce((sum, order) => {
+            return sum + order.orderItems.reduce((orderSum, item) => 
+              orderSum + (item.price * item.quantity), 0);
+          }, 0);
+
+          const ordersCount = dayOrders.length;
+
+          return {
+            date: dayStr,
+            revenue,
+            orders: ordersCount
+          };
+        });
+
+        totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+        break;
+      }
+
+      case 'monthly': {
+        // Group by day
+        periodLabel = 'This Month';
+        const days = eachDayOfInterval({
+          start: startDate,
+          end: endDate
+        });
+
+        items = days.map(day => {
+          const dayStr = format(day, 'dd');
+          const dayOrders = orders.filter(order => {
+            const orderDate = new Date(order.orderDate);
+            return orderDate.getDate() === day.getDate() && 
+                   orderDate.getMonth() === day.getMonth();
+          });
+
+          const revenue = dayOrders.reduce((sum, order) => {
+            return sum + order.orderItems.reduce((orderSum, item) => 
+              orderSum + (item.price * item.quantity), 0);
+          }, 0);
+
+          const ordersCount = dayOrders.length;
+
+          return {
+            date: dayStr,
+            revenue,
+            orders: ordersCount
+          };
+        });
+
+        totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+        break;
+      }
+
+      case 'yearly': {
+        // Group by month
+        periodLabel = 'This Year';
+        const months = eachMonthOfInterval({
+          start: startDate,
+          end: endDate
+        });
+
+        items = months.map(month => {
+          const monthStr = format(month, 'MMM');
+          const monthOrders = orders.filter(order => {
+            const orderDate = new Date(order.orderDate);
+            return orderDate.getMonth() === month.getMonth() && 
+                   orderDate.getFullYear() === month.getFullYear();
+          });
+
+          const revenue = monthOrders.reduce((sum, order) => {
+            return sum + order.orderItems.reduce((orderSum, item) => 
+              orderSum + (item.price * item.quantity), 0);
+          }, 0);
+
+          const ordersCount = monthOrders.length;
+
+          return {
+            date: monthStr,
+            revenue,
+            orders: ordersCount
+          };
+        });
+
+        totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+        break;
+      }
+    }
+
+    // Calculate trend by comparing with previous period
+    const previousPeriod = getDateRange(period as 'daily' | 'weekly' | 'monthly' | 'yearly');
+    previousPeriod.endDate = previousPeriod.startDate;
+    previousPeriod.startDate = new Date(previousPeriod.startDate.getTime() - (endDate.getTime() - startDate.getTime()));
+
+    const previousOrders = await prisma.order.findMany({
+      where: {
+        orderDate: {
+          gte: previousPeriod.startDate,
+          lte: previousPeriod.endDate
+        },
+        status: {
+          not: 'CANCELLED'
+        }
+      },
+      include: {
+        orderItems: true
+      }
+    });
+
+    previousPeriodRevenue = previousOrders.reduce((sum, order) => {
+      return sum + order.orderItems.reduce((orderSum, item) => 
+        orderSum + (item.price * item.quantity), 0);
+    }, 0);
+
+    const trend = previousPeriodRevenue > 0 
+      ? ((totalRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100
+      : totalRevenue > 0 ? 100 : 0;
+
+    res.json({
+      items,
+      totalRevenue,
+      trend: parseFloat(trend.toFixed(1)),
+      periodLabel
+    });
+
+  } catch (error) {
+    console.error('Error fetching revenue analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch revenue analytics' });
+  }
+};
+
+// Helper function to generate date ranges
+function getDateRange(period: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+  const now = new Date();
+  let startDate: Date;
+  let endDate: Date = now;
+
+  switch (period) {
+    case 'daily':
+      startDate = new Date(now.setHours(0, 0, 0, 0));
+      break;
+    case 'weekly':
+      startDate = subDays(now, 7);
+      break;
+    case 'monthly':
+      startDate = subMonths(now, 1);
+      break;
+    case 'yearly':
+      startDate = subYears(now, 1);
+      break;
+    default:
+      startDate = subMonths(now, 1);
+  }
+
+  return { startDate, endDate };
+}
 
 
 

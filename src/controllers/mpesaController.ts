@@ -611,6 +611,153 @@ export const requestRefund = async (req: RequestWithUser, res: Response): Promis
 };
 
 // Check transaction status
+// export const checkTransactionStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
+//   const userId = req.user?.id;
+//   if (!userId) {
+//     res.status(401).json({ message: 'Unauthorized' });
+//     return;
+//   }
+
+//   const { transactionId } = req.params;
+
+//   if (!transactionId) {
+//     res.status(400).json({ message: 'Transaction ID is required' });
+//     return;
+//   }
+
+//   try {
+//     const transaction = await prisma.transaction.findUnique({
+//       where: { id: Number(transactionId) },
+//     });
+
+//     if (!transaction || transaction.userId !== userId) {
+//       res.status(404).json({ message: 'Transaction not found' });
+//       return;
+//     }
+
+//     // If transaction is still pending and it's an M-Pesa transaction, check with M-Pesa
+//     if (
+//       transaction.status === TransactionStatus.PENDING &&
+//       transaction.paymentMethod === PaymentMethodType.MPESA &&
+//       transaction.metaData
+//     ) {
+//       const metaData = transaction.metaData as any;
+
+//       if (metaData.checkoutRequestID) {
+//         // Query STK push status
+//         const token = await getMpesaToken();
+//         const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+//         const password = Buffer.from(MPESA_SHORTCODE + MPESA_PASSKEY + timestamp).toString('base64');
+
+//         try {
+//           const response = await axios.post(
+//             'https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query',
+//             {
+//               BusinessShortCode: MPESA_SHORTCODE,
+//               Password: password,
+//               Timestamp: timestamp,
+//               CheckoutRequestID: metaData.checkoutRequestID,
+//             },
+//             {
+//               headers: {
+//                 Authorization: `Bearer ${token}`,
+//                 'Content-Type': 'application/json',
+//               },
+//             }
+//           );
+
+//           // Process response
+//           const result = response.data;
+
+//           if (result.ResultCode === '0') {
+//             // Transaction successful
+//             await prisma.transaction.update({
+//               where: { id: transaction.id },
+//               data: {
+//                 status: TransactionStatus.COMPLETED,
+//                 metaData: { ...metaData, stkQueryResponse: result }
+//               },
+//             });
+
+//             // If this was a wallet top-up, update wallet balance
+//             if (transaction.transactionType === TransactionType.WALLET_TOPUP && transaction.walletId) {
+//               await prisma.wallet.update({
+//                 where: { id: transaction.walletId },
+//                 data: { balance: { increment: transaction.amount } },
+//               });
+//             }
+
+//             // If this was an order payment, update order status
+//             if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
+//               await prisma.order.update({
+//                 where: { id: transaction.orderId },
+//                 data: {
+//                   status: OrderStatusEnum.PROCESSING,
+//                   statusHistory: {
+//                     create: { status: OrderStatusEnum.PROCESSING },
+//                   },
+//                 },
+//               });
+//             }
+
+//             res.status(200).json({
+//               message: 'Payment completed successfully',
+//               data: {
+//                 transactionId: transaction.id,
+//                 status: TransactionStatus.COMPLETED,
+//                 mpesaResult: result
+//               },
+//             });
+
+//             return;
+
+//           } else {
+//             // Transaction failed or pending
+//             const newStatus = result.ResultCode === '1032' ? TransactionStatus.PENDING : TransactionStatus.FAILED;
+
+//             await prisma.transaction.update({
+//               where: { id: transaction.id },
+//               data: {
+//                 status: newStatus,
+//                 metaData: { ...metaData, stkQueryResponse: result }
+//               },
+//             });
+
+//             res.status(200).json({
+//               message: result.ResultDesc || 'Transaction status checked',
+//               data: {
+//                 transactionId: transaction.id,
+//                 status: newStatus,
+//                 mpesaResult: result
+//               },
+//             });
+
+//             return;
+//           }
+//         } catch (error) {
+//           console.error('STK Query Error:', error);
+//           // Keep original transaction status if query fails
+//           res.status(200).json({
+//             message: 'Unable to get latest transaction status from M-Pesa',
+//             data: { transactionId: transaction.id, status: transaction.status },
+//           });
+//           return;
+//         }
+//       }
+//     }
+
+//     // Return current transaction status from database
+//     res.status(200).json({
+//       message: 'Transaction status retrieved',
+//       data: { transaction },
+//     });
+//   } catch (error) {
+//     console.error('Check Transaction Error:', error);
+//     res.status(500).json({ message: 'Failed to check transaction status' });
+//   }
+// };
+
+// Check transaction status with duplicate payment handling
 export const checkTransactionStatus = async (req: RequestWithUser, res: Response): Promise<void> => {
   const userId = req.user?.id;
   if (!userId) {
@@ -671,6 +818,74 @@ export const checkTransactionStatus = async (req: RequestWithUser, res: Response
 
           if (result.ResultCode === '0') {
             // Transaction successful
+            
+            // For order payments, check if the order has already been paid
+            if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
+              // Check if this order already has a completed payment
+              const existingPayment = await prisma.transaction.findFirst({
+                where: {
+                  orderId: transaction.orderId,
+                  transactionType: TransactionType.PAYMENT,
+                  status: TransactionStatus.COMPLETED,
+                  id: { not: transaction.id } // Exclude the current transaction
+                },
+              });
+
+              if (existingPayment) {
+                // This is a duplicate payment, redirect to wallet instead
+                console.log(`Duplicate payment detected for order ID ${transaction.orderId}. Redirecting to wallet.`);
+                
+                // Find or create user wallet
+                let wallet = await prisma.wallet.findUnique({ 
+                  where: { userId: transaction.userId } 
+                });
+
+                if (!wallet) {
+                  wallet = await prisma.wallet.create({
+                    data: { userId: transaction.userId, balance: 0 },
+                  });
+                }
+
+                // Update the transaction type to wallet top-up instead of order payment
+                await prisma.transaction.update({
+                  where: { id: transaction.id },
+                  data: {
+                    transactionType: TransactionType.WALLET_TOPUP,
+                    status: TransactionStatus.COMPLETED,
+                    walletId: wallet.id,
+                    description: `Duplicate payment for Order #${transaction.orderId} - Added to wallet`,
+                    metaData: {
+                      ...metaData,
+                      stkQueryResponse: result,
+                      duplicatePayment: true,
+                      originalOrderId: transaction.orderId
+                    },
+                  },
+                });
+
+                // Update wallet balance
+                await prisma.wallet.update({
+                  where: { id: wallet.id },
+                  data: { balance: { increment: transaction.amount } },
+                });
+
+                res.status(200).json({
+                  message: 'Duplicate payment detected and added to your wallet',
+                  data: {
+                    transactionId: transaction.id,
+                    status: TransactionStatus.COMPLETED,
+                    transactionType: TransactionType.WALLET_TOPUP,
+                    amount: transaction.amount,
+                    walletId: wallet.id,
+                    mpesaResult: result,
+                    isDuplicatePayment: true
+                  },
+                });
+                return;
+              }
+            }
+
+            // Normal flow (not a duplicate)
             await prisma.transaction.update({
               where: { id: transaction.id },
               data: {
@@ -760,6 +975,88 @@ export const checkTransactionStatus = async (req: RequestWithUser, res: Response
 // Callback Handlers
 
 // STK push callback
+// export const handleSTKCallback = async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { Body } = req.body;
+//     console.log('STK Callback received:', JSON.stringify(req.body));
+
+//     // Store callback data
+//     await prisma.mpesaCallback.create({
+//       data: {
+//         transactionType: 'STK',
+//         merchantRequestId: Body.stkCallback.MerchantRequestID,
+//         checkoutRequestId: Body.stkCallback.CheckoutRequestID,
+//         resultCode: Body.stkCallback.ResultCode,
+//         resultDesc: Body.stkCallback.ResultDesc,
+//         callbackMetadata: Body.stkCallback.CallbackMetadata || {},
+//       },
+//     });
+
+//     // If successful payment
+//     if (Body.stkCallback.ResultCode === 0) {
+//       // Extract metadata
+//       const callbackMetadata = Body.stkCallback.CallbackMetadata.Item;
+//       const mpesaReceiptId = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
+//       const phoneNumber = callbackMetadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
+//       const amount = callbackMetadata.find((item: any) => item.Name === 'Amount')?.Value;
+
+//       // Find related transaction
+//       const transaction = await prisma.transaction.findFirst({
+//         where: {
+//           metaData: {
+//             path: ['checkoutRequestID'],
+//             equals: Body.stkCallback.CheckoutRequestID,
+//           },
+//         },
+//       });
+
+//       if (transaction) {
+//         // Update transaction
+//         await prisma.transaction.update({
+//           where: { id: transaction.id },
+//           data: {
+//             status: TransactionStatus.COMPLETED,
+//             mpesaReceiptId,
+//             metaData: {
+//               ...transaction.metaData as any,
+//               callbackReceived: true,
+//               callbackData: Body.stkCallback,
+//             },
+//           },
+//         });
+
+//         // Handle wallet top-up
+//         if (transaction.transactionType === TransactionType.WALLET_TOPUP && transaction.walletId) {
+//           await prisma.wallet.update({
+//             where: { id: transaction.walletId },
+//             data: { balance: { increment: transaction.amount } },
+//           });
+//         }
+
+//         // Handle order payment
+//         if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
+//           await prisma.order.update({
+//             where: { id: transaction.orderId },
+//             data: {
+//               status: OrderStatusEnum.PROCESSING,
+//               statusHistory: {
+//                 create: { status: OrderStatusEnum.PROCESSING },
+//               },
+//             },
+//           });
+//         }
+//       }
+//     }
+
+//     // Respond to M-Pesa
+//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback received successfully' });
+//   } catch (error) {
+//     console.error('STK Callback Error:', error);
+//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback processed' });
+//   }
+// };
+
+// STK push callback with duplicate payment handling
 export const handleSTKCallback = async (req: Request, res: Response): Promise<void> => {
   try {
     const { Body } = req.body;
@@ -796,7 +1093,68 @@ export const handleSTKCallback = async (req: Request, res: Response): Promise<vo
       });
 
       if (transaction) {
-        // Update transaction
+        // For order payments, check if the order has already been paid
+        if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
+          // Check if this order already has a completed payment
+          const existingPayment = await prisma.transaction.findFirst({
+            where: {
+              orderId: transaction.orderId,
+              transactionType: TransactionType.PAYMENT,
+              status: TransactionStatus.COMPLETED,
+              id: { not: transaction.id } // Exclude the current transaction
+            },
+          });
+
+          if (existingPayment) {
+            // This is a duplicate payment, redirect to wallet instead
+            console.log(`Duplicate payment detected for order ID ${transaction.orderId}. Redirecting to wallet.`);
+            
+            // Find or create user wallet
+            let wallet = await prisma.wallet.findUnique({ 
+              where: { userId: transaction.userId } 
+            });
+
+            if (!wallet) {
+              wallet = await prisma.wallet.create({
+                data: { userId: transaction.userId, balance: 0 },
+              });
+            }
+
+            // Update the transaction type to wallet top-up instead of order payment
+            await prisma.transaction.update({
+              where: { id: transaction.id },
+              data: {
+                transactionType: TransactionType.WALLET_TOPUP,
+                status: TransactionStatus.COMPLETED,
+                walletId: wallet.id,
+                mpesaReceiptId,
+                description: `Duplicate payment for Order #${transaction.orderId} - Added to wallet`,
+                metaData: {
+                  ...transaction.metaData as any,
+                  callbackReceived: true,
+                  callbackData: Body.stkCallback,
+                  duplicatePayment: true,
+                  originalOrderId: transaction.orderId
+                },
+              },
+            });
+
+            // Update wallet balance
+            await prisma.wallet.update({
+              where: { id: wallet.id },
+              data: { balance: { increment: transaction.amount } },
+            });
+
+            // Send notification to user about duplicate payment (you can add this later)
+            // await notifyUserAboutDuplicatePayment(transaction.userId, transaction.orderId, transaction.amount);
+
+            // Respond to M-Pesa
+            res.status(200).json({ ResultCode: 0, ResultDesc: 'Duplicate payment processed successfully' });
+            return;
+          }
+        }
+
+        // Normal payment processing flow (not a duplicate)
         await prisma.transaction.update({
           where: { id: transaction.id },
           data: {
@@ -1537,3 +1895,73 @@ export const getTransactionStats = async (req: RequestWithUser, res: Response): 
     res.status(500).json({ message: 'Failed to retrieve transaction statistics' });
   }
 };
+
+// Admin: Get all transactions
+export const getTransactions = async (req: RequestWithUser, res: Response): Promise<void> => {
+  const adminId = req.user?.id;
+
+  // Ensure that the user is an admin
+  if (!adminId || req.user?.role !== Role.ADMIN) {
+    res.status(401).json({ message: 'Unauthorized. Admin access required.' });
+    return;
+  }
+
+  const { status, page = 1, limit = 10 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  try {
+    // Construct where clause based on filters (status and pagination)
+    const whereClause: any = {};
+    if (status) {
+      whereClause.status = status;
+    }
+
+    // Fetch the transactions with user, order, and payment method details
+    const transactions = await prisma.transaction.findMany({
+      where: whereClause,
+      skip,
+      take: Number(limit),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: { 
+            id: true, 
+            name: true, 
+            email: true, 
+            phoneNumber: true,
+            paymentMethods: { // Nested paymentMethods under the user
+              select: {
+                type: true, // Include the type of payment method (e.g., MPESA, Credit Card)
+                details: true, // Include the payment method details
+              },
+            },
+          },
+        },
+        order: {
+          select: { id: true, orderNumber: true, orderDate: true, status: true },
+        },
+        wallet: {
+          select: { id: true, balance: true },
+        },
+      },
+    });
+
+    // Count the total transactions matching the filter
+    const totalTransactions = await prisma.transaction.count({ where: whereClause });
+
+    res.status(200).json({
+      transactions,
+      pagination: {
+        total: totalTransactions,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(totalTransactions / Number(limit)),
+      },
+    });
+  } catch (error) {
+    console.error('Get Transactions Error:', error);
+    res.status(500).json({ message: 'Failed to retrieve transactions' });
+  }
+};
+
+

@@ -53,7 +53,7 @@ export const authenticateToken = async (req: RequestWithUser, res: Response, nex
 
     // If user doesn't exist, deny access
     if (!user) {
-      res.status(401).json({ message: 'Invalid token: User does not exist' });
+      res.status(401).json({ message: 'User does not exist' });
       return;
     }
 
@@ -64,6 +64,6 @@ export const authenticateToken = async (req: RequestWithUser, res: Response, nex
     next();
   } catch (error) {
     console.error('Authentication Error:', error);
-    res.status(400).json({ message: 'Invalid token' });
+    // res.status(400).json({ message: 'Invalid token' });
   }
 };

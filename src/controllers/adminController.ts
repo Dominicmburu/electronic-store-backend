@@ -6,6 +6,16 @@ import { CustomError } from '../utils/CustomError';
 import { Role } from '@prisma/client';
 import { generateToken } from '../utils/tokenUtils';
 
+interface RequestWithUser extends Request {
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+    phoneNumber: string;
+    role: Role;
+  };
+}
+
 // Register a new admin
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -59,7 +69,7 @@ export const adminLogin = async (req: Request, res: Response) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new CustomError('Invalid credentials', 400);
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' });
     res.status(200).json({
@@ -126,9 +136,14 @@ export const adminDeactivateAdmin = async (req: Request, res: Response) => {
 };
 
 // Admin fetches details of another admin
-export const getAdminDetails = async (req: Request, res: Response) => {
+export const getAdminDetails = async (req: RequestWithUser, res: Response) => {
   try {
     const { id } = req.params;
+
+    const userId = req.user?.id;
+
+    // Check if the user is an admin
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
     const adminUser = await prisma.user.findUnique({
       where: { id: Number(id) },

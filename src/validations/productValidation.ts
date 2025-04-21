@@ -5,6 +5,7 @@ export const productSchema = Joi.object({
   description: Joi.string().min(10).max(1000).required(),
   lastPrice: Joi.number().positive().required(),
   currentPrice: Joi.number().positive().required(),
+  stockQuantity: Joi.number().integer().min(0).required(),
   specifications: Joi.object().required(), // Expecting JSON
   images: Joi.array().items(Joi.string()).required(), // Array of valid URLs
   isFeatured: Joi.boolean(),
