@@ -3,6 +3,6 @@ import Joi from 'joi';
 
 export const updateOrderStatusSchema = Joi.object({
   status: Joi.string()
-    .valid(OrderStatusEnum)
+    .valid(...Object.values(OrderStatusEnum))
     .required(),
 });

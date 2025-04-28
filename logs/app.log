@@ -1,0 +1,23 @@
+[2025-04-28T11:54:21.242Z] info: Scheduled tasks initialized
+[2025-04-28T11:54:21.248Z] info: Transaction polling service registered
+[2025-04-28T11:54:21.249Z] info: Payment verification services initialized successfully
+[2025-04-28T11:55:00.521Z] info: Running scheduled verification of pending transactions
+[2025-04-28T11:55:00.629Z] info: Scheduled transaction verification completed
+[2025-04-28T12:00:00.709Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:00:00.716Z] info: Running targeted verification for 30-minute old transactions
+[2025-04-28T12:00:00.857Z] info: Scheduled transaction verification completed
+[2025-04-28T12:00:00.861Z] info: Found 0 transactions from 30 minutes ago
+[2025-04-28T12:05:00.152Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:05:00.166Z] info: Scheduled transaction verification completed
+[2025-04-28T12:10:00.566Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:10:00.687Z] info: Scheduled transaction verification completed
+[2025-04-28T12:10:00.705Z] info: Running targeted verification for 30-minute old transactions
+[2025-04-28T12:10:00.710Z] info: Found 0 transactions from 30 minutes ago
+[2025-04-28T12:15:00.244Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:15:00.256Z] info: Scheduled transaction verification completed
+[2025-04-28T12:20:00.147Z] info: Running targeted verification for 30-minute old transactions
+[2025-04-28T12:20:00.265Z] info: Found 0 transactions from 30 minutes ago
+[2025-04-28T12:20:00.991Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:20:01.004Z] info: Scheduled transaction verification completed
+[2025-04-28T12:25:00.574Z] info: Running scheduled verification of pending transactions
+[2025-04-28T12:25:00.693Z] info: Scheduled transaction verification completed

@@ -187,6 +187,17 @@ model Wallet {
   updatedAt   DateTime  @updatedAt
   user        User      @relation("UserWallet", fields: [userId], references: [id])
   transactions Transaction[] @relation("WalletTransactions")
+  balanceUpdates  WalletBalanceUpdate[]
+}
+
+model WalletBalanceUpdate {
+  id            Int      @id @default(autoincrement())
+  walletId      Int
+  transactionId Int      @unique
+  amount        Float
+  createdAt     DateTime @default(now())
+  wallet      Wallet      @relation(fields: [walletId], references: [id])
+  transaction Transaction @relation("TransactionBalanceUpdates", fields: [transactionId], references: [id])
 }
 
 model Transaction {
@@ -207,6 +218,7 @@ model Transaction {
   wallet            Wallet?           @relation("WalletTransactions", fields: [walletId], references: [id])
   user              User              @relation("UserTransactions", fields: [userId], references: [id])
   order             Order?            @relation("OrderTransaction", fields: [orderId], references: [id])
+  balanceUpdate     WalletBalanceUpdate? @relation("TransactionBalanceUpdates")
 }
 
 model MpesaCallback {

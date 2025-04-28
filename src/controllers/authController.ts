@@ -57,11 +57,19 @@ export const register = async (req: Request, res: Response) => {
       },
     });
 
-    const paymentMethod = await prisma.paymentMethod.create({
+    const walletPaymentMethod = await prisma.paymentMethod.create({
       data: {
         userId: user.id,
         type: 'WALLET',
         details: 'Default wallet payment method',
+      },
+    });
+
+    const mpesaPaymentMethod = await prisma.paymentMethod.create({
+      data: {
+        userId: user.id,
+        type: 'MPESA',
+        details: phoneNumber,
       },
     });
 

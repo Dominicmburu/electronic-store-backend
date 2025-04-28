@@ -168,6 +168,7 @@ export const getAllOrders = async (req: RequestWithUser, res: Response) => {
       include: {
         orderItems: { include: { product: true } },
         statusHistory: true, 
+        user: true,
       },
     });
 
@@ -175,7 +176,13 @@ export const getAllOrders = async (req: RequestWithUser, res: Response) => {
       return res.status(404).json({ message: 'No orders found' });
     }
 
-    res.status(200).json({ orders }); 
+    const formattedOrders = orders.map(order => ({
+      ...order,
+      customerEmail: order.user.email,  
+      customerPhoneNumber: order.user.phoneNumber, 
+    }));
+
+    res.status(200).json({ orders: formattedOrders }); 
   } catch (err) {
     console.error('Error fetching orders:', err);
     res.status(500).json({ message: 'Server error' });
@@ -248,6 +255,7 @@ export const trackOrder = async (req: RequestWithUser, res: Response) => {
 // Delete/Cancel an order
 export const cancelOrder = async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.id;
+  const userRole = req.user?.role;
   const { orderNumber } = req.params;
 
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -258,9 +266,10 @@ export const cancelOrder = async (req: RequestWithUser, res: Response) => {
       where: { orderNumber },
     });
 
-    if (!order || order.userId !== userId) {
+    if (!order ) {
       return res.status(404).json({ message: 'Order not found' });
     }
+    
 
     if (order.status === OrderStatusEnum.CANCELLED) {
       return res.status(400).json({ message: 'Order is already cancelled' });

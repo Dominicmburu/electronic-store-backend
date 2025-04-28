@@ -28,7 +28,7 @@ router.put('/:orderNumber/status', authorizeAdmin, asyncHandler(updateOrderStatu
 // GET /api/orders/:orderNumber/track - Track order status
 router.get('/:orderNumber/track', asyncHandler(trackOrder));
 
-// DELETE /api/orders/:orderNumber - Cancel an order
+// DELETE /api/orders/:orderNumber - Cancel an orde
 router.delete('/:orderNumber', asyncHandler(cancelOrder));
 
 router.get('/analytics/revenue', asyncHandler(getRevenueAnalytics));

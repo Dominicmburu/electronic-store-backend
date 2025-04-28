@@ -95,6 +95,18 @@ const formatPhoneNumber = (phoneNumber: string): string => {
   return digits;
 };
 
+const checkForExistingPayment = async (orderId: number): Promise<boolean> => {
+  const existingPayment = await prisma.transaction.findFirst({
+    where: {
+      orderId,
+      transactionType: TransactionType.PAYMENT,
+      status: TransactionStatus.COMPLETED,
+    },
+  });
+  
+  return !!existingPayment;
+};
+
 // Initialize M-Pesa C2B URLs (should be called on app startup)
 export const initializeMpesaC2B = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -144,6 +156,16 @@ export const initiateSTKPush = async (req: RequestWithUser, res: Response): Prom
   }
 
   try {
+
+    const isAlreadyPaid = await checkForExistingPayment(Number(orderId));
+    if (isAlreadyPaid) {
+      res.status(400).json({ 
+        message: 'This order has already been paid for. Please check your order status.',
+        alreadyPaid: true
+      });
+      return;
+    }
+
     // Get order details
     const order = await prisma.order.findUnique({
       where: { id: Number(orderId) },
@@ -152,6 +174,11 @@ export const initiateSTKPush = async (req: RequestWithUser, res: Response): Prom
 
     if (!order || order.userId !== userId) {
       res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    if (order.status !== OrderStatusEnum.PENDING) {
+      res.status(400).json({ message: 'This order is not in a payable state' });
       return;
     }
 
@@ -345,11 +372,7 @@ export const payWithWallet = async (req: RequestWithUser, res: Response): Promis
     res.status(400).json({ message: 'This order has already been paid for' });
     return;
   }
-
-  // if (order.status !== OrderStatusEnum.PENDING) {
-  //   res.status(400).json({ message: 'This order is not in a payable state' });
-  //   return;
-  // }
+  
 
   try {
     // Get order details
@@ -360,6 +383,21 @@ export const payWithWallet = async (req: RequestWithUser, res: Response): Promis
 
     if (!order || order.userId !== userId) {
       res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    const isAlreadyPaid = await checkForExistingPayment(Number(orderId));
+    if (isAlreadyPaid) {
+      res.status(400).json({ 
+        message: 'This order has already been paid for. Please check your order status.',
+        alreadyPaid: true 
+      });
+      return;
+    }
+
+    // Check order status
+    if (order.status !== OrderStatusEnum.PENDING) {
+      res.status(400).json({ message: 'This order is not in a payable state' });
       return;
     }
 
@@ -777,7 +815,7 @@ export const checkTransactionStatus = async (req: RequestWithUser, res: Response
       where: { id: Number(transactionId) },
     });
 
-    if (!transaction || transaction.userId !== userId) {
+    if (!transaction) {
       res.status(404).json({ message: 'Transaction not found' });
       return;
     }
@@ -974,87 +1012,6 @@ export const checkTransactionStatus = async (req: RequestWithUser, res: Response
 
 // Callback Handlers
 
-// STK push callback
-// export const handleSTKCallback = async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const { Body } = req.body;
-//     console.log('STK Callback received:', JSON.stringify(req.body));
-
-//     // Store callback data
-//     await prisma.mpesaCallback.create({
-//       data: {
-//         transactionType: 'STK',
-//         merchantRequestId: Body.stkCallback.MerchantRequestID,
-//         checkoutRequestId: Body.stkCallback.CheckoutRequestID,
-//         resultCode: Body.stkCallback.ResultCode,
-//         resultDesc: Body.stkCallback.ResultDesc,
-//         callbackMetadata: Body.stkCallback.CallbackMetadata || {},
-//       },
-//     });
-
-//     // If successful payment
-//     if (Body.stkCallback.ResultCode === 0) {
-//       // Extract metadata
-//       const callbackMetadata = Body.stkCallback.CallbackMetadata.Item;
-//       const mpesaReceiptId = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
-//       const phoneNumber = callbackMetadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
-//       const amount = callbackMetadata.find((item: any) => item.Name === 'Amount')?.Value;
-
-//       // Find related transaction
-//       const transaction = await prisma.transaction.findFirst({
-//         where: {
-//           metaData: {
-//             path: ['checkoutRequestID'],
-//             equals: Body.stkCallback.CheckoutRequestID,
-//           },
-//         },
-//       });
-
-//       if (transaction) {
-//         // Update transaction
-//         await prisma.transaction.update({
-//           where: { id: transaction.id },
-//           data: {
-//             status: TransactionStatus.COMPLETED,
-//             mpesaReceiptId,
-//             metaData: {
-//               ...transaction.metaData as any,
-//               callbackReceived: true,
-//               callbackData: Body.stkCallback,
-//             },
-//           },
-//         });
-
-//         // Handle wallet top-up
-//         if (transaction.transactionType === TransactionType.WALLET_TOPUP && transaction.walletId) {
-//           await prisma.wallet.update({
-//             where: { id: transaction.walletId },
-//             data: { balance: { increment: transaction.amount } },
-//           });
-//         }
-
-//         // Handle order payment
-//         if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
-//           await prisma.order.update({
-//             where: { id: transaction.orderId },
-//             data: {
-//               status: OrderStatusEnum.PROCESSING,
-//               statusHistory: {
-//                 create: { status: OrderStatusEnum.PROCESSING },
-//               },
-//             },
-//           });
-//         }
-//       }
-//     }
-
-//     // Respond to M-Pesa
-//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback received successfully' });
-//   } catch (error) {
-//     console.error('STK Callback Error:', error);
-//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback processed' });
-//   }
-// };
 
 // STK push callback with duplicate payment handling
 export const handleSTKCallback = async (req: Request, res: Response): Promise<void> => {
@@ -1198,6 +1155,88 @@ export const handleSTKCallback = async (req: Request, res: Response): Promise<vo
     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback processed' });
   }
 };
+
+// STK push callback
+// export const handleSTKCallback = async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { Body } = req.body;
+//     console.log('STK Callback received:', JSON.stringify(req.body));
+
+//     // Store callback data
+//     await prisma.mpesaCallback.create({
+//       data: {
+//         transactionType: 'STK',
+//         merchantRequestId: Body.stkCallback.MerchantRequestID,
+//         checkoutRequestId: Body.stkCallback.CheckoutRequestID,
+//         resultCode: Body.stkCallback.ResultCode,
+//         resultDesc: Body.stkCallback.ResultDesc,
+//         callbackMetadata: Body.stkCallback.CallbackMetadata || {},
+//       },
+//     });
+
+//     // If successful payment
+//     if (Body.stkCallback.ResultCode === 0) {
+//       // Extract metadata
+//       const callbackMetadata = Body.stkCallback.CallbackMetadata.Item;
+//       const mpesaReceiptId = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
+//       const phoneNumber = callbackMetadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
+//       const amount = callbackMetadata.find((item: any) => item.Name === 'Amount')?.Value;
+
+//       // Find related transaction
+//       const transaction = await prisma.transaction.findFirst({
+//         where: {
+//           metaData: {
+//             path: ['checkoutRequestID'],
+//             equals: Body.stkCallback.CheckoutRequestID,
+//           },
+//         },
+//       });
+
+//       if (transaction) {
+//         // Update transaction
+//         await prisma.transaction.update({
+//           where: { id: transaction.id },
+//           data: {
+//             status: TransactionStatus.COMPLETED,
+//             mpesaReceiptId,
+//             metaData: {
+//               ...transaction.metaData as any,
+//               callbackReceived: true,
+//               callbackData: Body.stkCallback,
+//             },
+//           },
+//         });
+
+//         // Handle wallet top-up
+//         if (transaction.transactionType === TransactionType.WALLET_TOPUP && transaction.walletId) {
+//           await prisma.wallet.update({
+//             where: { id: transaction.walletId },
+//             data: { balance: { increment: transaction.amount } },
+//           });
+//         }
+
+//         // Handle order payment
+//         if (transaction.transactionType === TransactionType.PAYMENT && transaction.orderId) {
+//           await prisma.order.update({
+//             where: { id: transaction.orderId },
+//             data: {
+//               status: OrderStatusEnum.PROCESSING,
+//               statusHistory: {
+//                 create: { status: OrderStatusEnum.PROCESSING },
+//               },
+//             },
+//           });
+//         }
+//       }
+//     }
+
+//     // Respond to M-Pesa
+//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback received successfully' });
+//   } catch (error) {
+//     console.error('STK Callback Error:', error);
+//     res.status(200).json({ ResultCode: 0, ResultDesc: 'Callback processed' });
+//   }
+// };
 
 
 export const c2bValidation = async (req: Request, res: Response): Promise<void> => {
@@ -1963,5 +2002,3 @@ export const getTransactions = async (req: RequestWithUser, res: Response): Prom
     res.status(500).json({ message: 'Failed to retrieve transactions' });
   }
 };
-
-

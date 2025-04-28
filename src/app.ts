@@ -19,9 +19,9 @@ import categoryRoutes from './routes/categoryRoutes';
 import printerTypeRouter from './routes/printerTypeRouter';
 import addressRoutes from './routes/addressRoutes';
 import mpesaRoutes from './routes/mpesaRoutes';
+import logger from './logger';
 
 const app = express();
-// import { createClient } from '@supabase/supabase-js';
 
 app.use(cors(corsOptions));
 app.use(express.json());
