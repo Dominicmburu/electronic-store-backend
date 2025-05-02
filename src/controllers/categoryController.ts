@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
-import { Prisma } from '@prisma/client';
 import { categorySchema } from '../validations/categoryValidation'
 
 // Create a new category
@@ -8,7 +7,7 @@ export const createCategory = async (req: Request, res: Response) => {
   const { error } = categorySchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
 
-  const { name, description, images, printerTypeId } = req.body;
+  const { name, description, printerTypeId } = req.body;
 
   try {
     // Check if the printer type exists
@@ -20,7 +19,6 @@ export const createCategory = async (req: Request, res: Response) => {
       data: {
         name,
         description,
-        images,
         printerTypeId,
       },
     });
@@ -38,7 +36,7 @@ export const updateCategory = async (req: Request, res: Response) => {
   const { error } = categorySchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
 
-  const { name, description, images, printerTypeId } = req.body;
+  const { name, description, printerTypeId } = req.body;
 
   try {
     // Check if the category exists
@@ -52,7 +50,7 @@ export const updateCategory = async (req: Request, res: Response) => {
     // Update the category
     const updatedCategory = await prisma.category.update({
       where: { id: Number(id) },
-      data: { name, description, images, printerTypeId },
+      data: { name, description, printerTypeId },
     });
 
     res.status(200).json({ message: 'Category updated successfully', category: updatedCategory });

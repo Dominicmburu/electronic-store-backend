@@ -92,7 +92,6 @@ model Category {
   id            Int         @id @default(autoincrement())
   name          String
   description   String
-  images        String[]
   printerTypeId Int
   printerType   PrinterType @relation("PrinterTypeCategories", fields: [printerTypeId], references: [id])
   products      Product[]   @relation("CategoryProducts")
